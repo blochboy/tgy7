@@ -1,0 +1,57 @@
+name: Self-Hosted Windows Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 1440
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Chocolatey if missing
+        shell: powershell
+        run: |
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = 3072
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+          choco --version
+
+      - name: Enable Windows features
+        shell: powershell
+        run: |
+          Enable-WindowsOptionalFeature -Online -FeatureName NetFx3 -All -NoRestart -ErrorAction SilentlyContinue
+          Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient -NoRestart -ErrorAction SilentlyContinue
+          Start-Service -Name msiserver, Audiosrv -ErrorAction SilentlyContinue
+
+      - name: Install runtimes (VC++, .NET, DirectX, WebView2)
+        shell: powershell
+        run: |
+          choco install vcredist-all dotnetfx dotnet-desktopruntime dotnet-runtime directx webview2-runtime -y --no-progress --ignore-checksums
+
+      - name: Install latest Java (Temurin JDK)
+        shell: powershell
+        run: |
+          choco upgrade temurin -y --no-progress
+          $jdk = (Get-ChildItem "C:\Program Files\Eclipse Adoptium" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+          "JAVA_HOME=$jdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$jdk\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$jdk\bin\java.exe" -version
+
+      # ---- Your install / test steps go here ----
+      - name: Install and test your software
+        shell: powershell
+        run: |
+          Write-Host "Put your installer / test commands here"
+          Get-PSDrive C | Select-Object Used,Free
+
+      - name: Upload results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: C:\path\to\your\output
